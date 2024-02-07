@@ -1,11 +1,15 @@
 package types
 
 import (
+	"encoding/json"
 	"fmt"
 	"main/pkg/utils"
 	"math/big"
+	"net/http"
 	"strconv"
 )
+
+const namadaGenesisValInfoURL = "https://namada.info/shielded-expedition.88f17d1d14/output/genesis_tm_address_to_alias.json"
 
 type Validator struct {
 	Index              int
@@ -70,12 +74,39 @@ type ValidatorWithInfo struct {
 	ChainValidator *ChainValidator
 }
 
+type GenesisValidatorInfo struct {
+	Alias          string `json:"alias"`
+	NamAddress     string `json:"nam_address"`
+	ConsensusKeyPk string `json:"consensus_key_pk"`
+	NetAddress     string `json:"net_address"`
+}
+
+func fetchValidatorInfos(url string) (map[string]GenesisValidatorInfo, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var data map[string]GenesisValidatorInfo
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
 func (v ValidatorWithInfo) Serialize() string {
 	name := v.Validator.Address
 	if v.ChainValidator != nil {
 		name = v.ChainValidator.Moniker
 		if v.ChainValidator.AssignedAddress != "" {
 			name = "🔑 " + name
+		}
+	} else {
+		valInfos, _ := fetchValidatorInfos(namadaGenesisValInfoURL)
+		if valInfos[v.Validator.Address].Alias != "" {
+			name = valInfos[v.Validator.Address].Alias
 		}
 	}
 
