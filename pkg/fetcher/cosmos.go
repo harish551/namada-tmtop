@@ -23,6 +23,8 @@ import (
 	providerTypes "github.com/cosmos/interchain-security/x/ccv/provider/types"
 )
 
+const namadaGenesisValInfoURL = "https://namada.info/shielded-expedition.88f17d1d14/output/genesis_tm_address_to_alias.json"
+
 type CosmosDataFetcher struct {
 	Config configPkg.Config
 	Logger zerolog.Logger
@@ -99,6 +101,21 @@ func (f *CosmosDataFetcher) AbciQuery(
 	return output.Unmarshal(response.Result.Response.Value)
 }
 
+func fetchValidatorInfos(url string) (map[string]types.GenesisValidatorInfo, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var data map[string]types.GenesisValidatorInfo
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
 func (f *CosmosDataFetcher) GetValidators() (*types.ChainValidators, error) {
 	query := stakingTypes.QueryValidatorsRequest{
 		Pagination: &queryTypes.PageRequest{
@@ -113,7 +130,21 @@ func (f *CosmosDataFetcher) GetValidators() (*types.ChainValidators, error) {
 		&validatorsResponse,
 		f.Config.GetProviderOrConsumerHost(),
 	); err != nil {
-		return nil, err
+		validatorsFromGenesis, err := fetchValidatorInfos(namadaGenesisValInfoURL)
+		if err != nil {
+			return nil, err
+		}
+		validators := make(types.ChainValidators, len(validatorsFromGenesis))
+		index := 0
+		for k, v := range validatorsFromGenesis {
+			validators[index] = types.ChainValidator{
+				Moniker:    v.Alias,
+				Address:    k,
+				RawAddress: v.ConsensusKeyPk,
+			}
+			index++
+		}
+		return &validators, nil
 	}
 
 	validators := make(types.ChainValidators, len(validatorsResponse.Validators))
